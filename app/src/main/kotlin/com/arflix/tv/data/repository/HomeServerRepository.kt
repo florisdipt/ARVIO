@@ -2066,7 +2066,16 @@ class HomeServerRepository @Inject constructor(
                 filename = name.ifBlank { item.name },
                 videoSize = sizeBytes.takeIf { it > 0L },
                 proxyHeaders = ProxyHeaders(request = playbackHeaders(connection))
-            )
+            ),
+            subtitles = subtitleStreams.mapNotNull { subtitle ->
+                subtitle.toSubtitle(
+                    serverUrl = connection.serverUrl,
+                    itemId = item.id,
+                    mediaSourceId = id,
+                    accessToken = connection.accessToken,
+                    provider = serverLabel
+                )
+            }
         )
     }
 
@@ -2382,6 +2391,23 @@ class HomeServerRepository @Inject constructor(
 
         val streams = array("MediaStreams").mapNotNull { it.asJsonObjectOrNull() }
         val videoStream = streams.firstOrNull { it.string("Type").equals("Video", ignoreCase = true) }
+        val subtitleStreams = streams
+            .filter { it.string("Type").equals("Subtitle", ignoreCase = true) }
+            .map { stream ->
+                HomeServerSubtitleStream(
+                    index = stream.int("Index") ?: -1,
+                    language = stream.string("Language"),
+                    displayTitle = stream.string("DisplayTitle"),
+                    title = stream.string("Title"),
+                    isExternal = stream.boolean("IsExternal") ?: false,
+                    isTextSubtitleStream = stream.boolean("IsTextSubtitleStream")
+                        ?: !stream.string("Codec").lowercase(Locale.US).contains("pgs") &&
+                        !stream.string("Codec").lowercase(Locale.US).contains("vobsub") &&
+                        !stream.string("Codec").lowercase(Locale.US).contains("dvbsub"),
+                    isForced = stream.boolean("IsForced") ?: false,
+                    isHearingImpaired = stream.boolean("IsHearingImpaired") ?: false
+                )
+            }
         return HomeServerMediaSource(
             id = string("Id"),
             key = "",
@@ -2392,7 +2418,8 @@ class HomeServerRepository @Inject constructor(
             sizeBytes = long("Size") ?: long("RunTimeTicks")?.let { 0L } ?: 0L,
             transcodingUrl = string("TranscodingUrl"),
             videoWidth = videoStream?.int("Width") ?: 0,
-            videoHeight = videoStream?.int("Height") ?: 0
+            videoHeight = videoStream?.int("Height") ?: 0,
+            subtitleStreams = subtitleStreams
         )
     }
 
@@ -2510,7 +2537,8 @@ class HomeServerRepository @Inject constructor(
         val audioProfile: String = "",
         val videoBitDepth: Int = 0,
         val mediaIndex: Int = 0,
-        val partIndex: Int = 0
+        val partIndex: Int = 0,
+        val subtitleStreams: List<HomeServerSubtitleStream> = emptyList()
     )
 
 }
